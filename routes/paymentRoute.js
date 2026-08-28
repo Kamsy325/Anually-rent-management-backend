@@ -1,4 +1,5 @@
 const express = require("express");
+const { createNotification } = require("../models/Notification");
 
 const authenticateToken =
   require("../middleware/auth");
@@ -1146,6 +1147,18 @@ router.get(
             "paystack",
 
         });
+
+        if (req.user?.id) {
+          const formattedAmount = `$${Number(payment.amount).toLocaleString()}`;
+          await createNotification({
+            userId: req.user.id,
+            role: "tenant",
+            title: "Rent Paid Successfully",
+            message: `Your rent payment of ${formattedAmount} for ${payment.apartment || 'your apartment'} was processed successfully.`,
+            type: "paid",
+            paymentId: payment.id,
+          });
+        }
 
 
       console.log(

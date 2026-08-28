@@ -24,6 +24,9 @@ const updateProfile = require("./routes/updateProfile.js")
 
 const paystackRoutes = require("./routes/paystack.js")
 
+const notificationRoutes = require("./routes/notificationRoutes");
+const { startNotificationScheduler } = require("./services/notificationScheduler");
+
 
 const app = express();
 
@@ -42,6 +45,12 @@ app.get("/", (req, res) => {
 });
 
 migrateUsers()
+
+app.use("/notifications", notificationRoutes);
+
+// Start daily cron job
+startNotificationScheduler();
+
 console.log('app.use(payments)')
 
 app.use(payments)
