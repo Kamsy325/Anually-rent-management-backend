@@ -26,6 +26,9 @@ const paystackRoutes = require("./routes/paystack.js")
 
 const notificationRoutes = require("./routes/notificationRoutes");
 const { startNotificationScheduler } = require("./services/notificationScheduler");
+const subscriptionRoutes = require("./routes/subscriptionRoutes.js")
+const webhookRoutes = require('./routes/webhookRoutes.js')
+const googleRoutes = require('./routes/googleRoutes.js')
 
 
 const app = express();
@@ -54,7 +57,7 @@ startNotificationScheduler();
 console.log('app.use(payments)')
 
 app.use(payments)
-
+app.use(webhookRoutes)
 console.log('app.use(dashboard)')
 app.use(dashboard)
 
@@ -71,6 +74,9 @@ app.use(updateProfile)
 console.log('paystackRoutes')
 app.use(paystackRoutes)
 app.use('/payments', paymentRoutes)
+
+app.use('/subscription', subscriptionRoutes)
+app.use(googleRoutes)
 
 console.log('paystack')
 const PORT =

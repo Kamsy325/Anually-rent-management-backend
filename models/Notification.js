@@ -10,7 +10,7 @@ function createNotificationTable() {
         role TEXT CHECK(role IN ('landlord', 'tenant')),
         title TEXT NOT NULL,
         message TEXT NOT NULL,
-        type TEXT CHECK(type IN ('due_soon', 'pending', 'overdue', 'paid', 'info')),
+        type TEXT CHECK(type IN ('due_soon', 'pending', 'overdue', 'paid', 'plan_expired', 'info')),
         is_read INTEGER DEFAULT 0,
         payment_id INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -20,8 +20,25 @@ function createNotificationTable() {
   });
 }
 
-// Run table creation on startup
 createNotificationTable().catch(console.error);
+
+// Helper to check if a notification of a specific type has already been sent
+function notificationExists(userId, role, type, paymentId = null) {
+  return new Promise((resolve, reject) => {
+    let query = `SELECT id FROM notifications WHERE user_id = ? AND role = ? AND type = ?`;
+    let params = [userId, role, type];
+
+    if (paymentId !== null) {
+      query += ` AND payment_id = ?`;
+      params.push(paymentId);
+    }
+
+    db.get(query, params, (err, row) => {
+      if (err) return reject(err);
+      resolve(!!row);
+    });
+  });
+}
 
 function createNotification({ userId, role, title, message, type, paymentId = null }) {
   return new Promise((resolve, reject) => {
@@ -80,4 +97,5 @@ module.exports = {
   getUserNotifications,
   markAsRead,
   markAllAsRead,
+  notificationExists,
 };

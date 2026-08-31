@@ -1,115 +1,70 @@
+// routes/tenants.js
 const express = require("express");
-
 const bcrypt = require("bcrypt");
 
-const authenticateToken =
-  require("../middleware/auth");
-
-const requireLandlord =
-  require("../middleware/requireLandlord");
+const authenticateToken = require("../middleware/auth");
+const requireLandlord = require("../middleware/requireLandlord");
+const checkTenantLimit = require("../middleware/checkTenantLimit");
 
 const {
   createTenant,
   getTenantsByLandlord,
   findTenantById,
   updateTenant,
-  deleteTenant
+  deleteTenant,
 } = require("../models/Tenant");
 
-
 const router = express.Router();
-
 
 // =====================================================
 // GET ALL TENANTS
 // GET /tenants
 // =====================================================
-
 router.get(
   "/tenants",
   authenticateToken,
   requireLandlord,
   async (req, res) => {
-
     try {
+      const databaseTenants = await getTenantsByLandlord(req.user.id);
+      
+      // Normalize status strictly to "Active" or "Locked"
+      const tenants = databaseTenants.map((t) => ({
+        ...t,
+        status: String(t.status || "").toLowerCase() === "locked" ? "Locked" : "Active",
+      }));
 
-      const tenants =
-        await getTenantsByLandlord(
-          req.user.id
-        );
-
-
-      res.status(200).json({
-
-        tenants
-
-      });
-
+      res.status(200).json({ tenants });
     } catch (error) {
-
-      console.error(
-        "Get tenants error:",
-        error
-      );
-
-
-      res.status(500).json({
-
-        message:
-          "Failed to get tenants"
-
-      });
-
+      console.error("Get tenants error:", error);
+      res.status(500).json({ message: "Failed to get tenants" });
     }
-
   }
 );
-
 
 // =====================================================
 // GET ONE TENANT
 // GET /tenants/:id
 // =====================================================
-
 router.get(
   "/tenants/:id",
   authenticateToken,
   requireLandlord,
   async (req, res) => {
-
     try {
-
-      const tenant =
-        await findTenantById(
-          req.params.id,
-          req.user.id
-        );
+      const tenant = await findTenantById(req.params.id, req.user.id);
 
       if (!tenant) {
-
-        return res.status(404).json({
-          message: "Tenant not found"
-        });
-
+        return res.status(404).json({ message: "Tenant not found" });
       }
 
-      res.status(200).json({
-        tenant
-      });
+      tenant.status = String(tenant.status || "").toLowerCase() === "locked" ? "Locked" : "Active";
 
+      res.status(200).json({ tenant });
     } catch (error) {
-
-      console.error(
-        "Get tenant error:",
-        error
-      );
-
-      res.status(500).json({
-        message: "Failed to get tenant"
-      });
-
+      console.error("Get tenant error:", error);
+      res.status(500).json({ message: "Failed to get tenant" });
     }
-
   }
 );
 
@@ -117,20 +72,13 @@ router.get(
 // CREATE TENANT
 // POST /tenants
 // =====================================================
-
-// =====================================================
-// CREATE TENANT
-// POST /tenants
-// =====================================================
-
 router.post(
   "/tenants",
   authenticateToken,
   requireLandlord,
+  checkTenantLimit, // Enforces tier limit check before creation
   async (req, res) => {
-
     try {
-
       const {
         name,
         apartment,
@@ -138,27 +86,8 @@ router.post(
         phone,
         rent,
         leaseEnds,
-        password
+        password,
       } = req.body;
-
-
-      console.log(
-        "ADD TENANT REQUEST:",
-        {
-          name,
-          apartment,
-          email,
-          phone,
-          rent,
-          leaseEnds,
-          passwordExists: !!password
-        }
-      );
-
-
-      // =====================================================
-      // VALIDATION
-      // =====================================================
 
       if (
         !name ||
@@ -171,154 +100,70 @@ router.post(
         !leaseEnds ||
         !password
       ) {
-
         return res.status(400).json({
-          message:
-            "All tenant fields are required"
+          message: "All tenant fields are required",
         });
-
       }
-
-
-      // =====================================================
-      // VALIDATE RENT
-      // =====================================================
 
       const numericRent = Number(rent);
-
-
-      if (
-        !Number.isFinite(numericRent) ||
-        numericRent < 0
-      ) {
-
+      if (!Number.isFinite(numericRent) || numericRent < 0) {
         return res.status(400).json({
-          message:
-            "Rent must be a valid number"
+          message: "Rent must be a valid number",
         });
-
       }
 
+      const hashedPassword = await bcrypt.hash(password, 12);
 
-      // =====================================================
-      // HASH PASSWORD
-      // =====================================================
-
-      const hashedPassword =
-        await bcrypt.hash(
-          password,
-          12
-        );
-
-
-      // =====================================================
-      // CREATE TENANT
-      // =====================================================
-
-      const tenant =
-        await createTenant(
-          req.user.id,
-          name,
-          apartment,
-          email,
-          phone,
-          hashedPassword,
-          numericRent,
-          leaseEnds
-        );
-
-
-      // =====================================================
-      // RESPONSE
-      // =====================================================
-
-      return res.status(201).json({
-
-        message:
-          "Tenant created successfully",
-
-        tenant
-
-      });
-
-    } catch (error) {
-
-      console.error(
-        "Create tenant error:",
-        error
+      const tenant = await createTenant(
+        req.user.id,
+        name,
+        apartment,
+        email,
+        phone,
+        hashedPassword,
+        numericRent,
+        leaseEnds
       );
 
+      return res.status(201).json({
+        message: "Tenant created successfully",
+        tenant: {
+          ...tenant,
+          status: "Active",
+        },
+      });
+    } catch (error) {
+      console.error("Create tenant error:", error);
 
-      if (
-        error.message &&
-        error.message.includes("UNIQUE")
-      ) {
-
+      if (error.message && error.message.includes("UNIQUE")) {
         return res.status(409).json({
-          message:
-            "A tenant with this email already exists"
+          message: "A tenant with this email already exists",
         });
-
       }
 
-
       return res.status(500).json({
-        message:
-          "Failed to create tenant"
+        message: "Failed to create tenant",
       });
-
     }
-
   }
 );
-
 
 // =====================================================
 // UPDATE TENANT
 // PUT /tenants/:id
 // =====================================================
-
 router.put(
   "/tenants/:id",
   authenticateToken,
   requireLandlord,
   async (req, res) => {
-
     try {
+      const { name, apartment, email, phone, rent, leaseEnds } = req.body;
 
-      const {
-        name,
-        apartment,
-        email,
-        phone,
-        rent,
-        leaseEnds
-      } = req.body;
-
-
-      // =========================
-      // FIND TENANT
-      // =========================
-
-      const existingTenant =
-        await findTenantById(
-          req.params.id,
-          req.user.id
-        );
-
-
+      const existingTenant = await findTenantById(req.params.id, req.user.id);
       if (!existingTenant) {
-
-        return res.status(404).json({
-          message: "Tenant not found"
-        });
-
+        return res.status(404).json({ message: "Tenant not found" });
       }
-
-
-      // =========================
-      // VALIDATION
-      // =========================
 
       if (
         !name ||
@@ -329,87 +174,44 @@ router.put(
         rent === null ||
         !leaseEnds
       ) {
-
         return res.status(400).json({
-          message: "All tenant fields are required"
+          message: "All tenant fields are required",
         });
-
       }
 
-
-      // =========================
-      // UPDATE
-      // =========================
-
-      const result =
-        await updateTenant(
-          req.params.id,
-          req.user.id,
-          name,
-          apartment,
-          email,
-          phone,
-          rent,
-          leaseEnds
-        );
-
-
-      if (result.changes === 0) {
-
-        return res.status(404).json({
-          message: "Tenant not found"
-        });
-
-      }
-
-
-      // =========================
-      // GET UPDATED TENANT
-      // =========================
-
-      const tenant =
-        await findTenantById(
-          req.params.id,
-          req.user.id
-        );
-
-
-      res.status(200).json({
-
-        message:
-          "Tenant updated successfully",
-
-        tenant
-
-      });
-
-    } catch (error) {
-
-      console.error(
-        "Update tenant error:",
-        error
+      const result = await updateTenant(
+        req.params.id,
+        req.user.id,
+        name,
+        apartment,
+        email,
+        phone,
+        rent,
+        leaseEnds
       );
 
-
-      if (
-        error.message &&
-        error.message.includes("UNIQUE")
-      ) {
-
-        return res.status(409).json({
-          message:
-            "A tenant with this email already exists"
-        });
-
+      if (result.changes === 0) {
+        return res.status(404).json({ message: "Tenant not found" });
       }
 
+      const tenant = await findTenantById(req.params.id, req.user.id);
+      tenant.status = String(tenant.status || "").toLowerCase() === "locked" ? "Locked" : "Active";
 
-      res.status(500).json({
-        message: "Failed to update tenant"
+      res.status(200).json({
+        message: "Tenant updated successfully",
+        tenant,
       });
+    } catch (error) {
+      console.error("Update tenant error:", error);
 
+      if (error.message && error.message.includes("UNIQUE")) {
+        return res.status(409).json({
+          message: "A tenant with this email already exists",
+        });
+      }
+
+      res.status(500).json({ message: "Failed to update tenant" });
     }
-
   }
 );
 
@@ -417,81 +219,31 @@ router.put(
 // DELETE TENANT
 // DELETE /tenants/:id
 // =====================================================
-
 router.delete(
   "/tenants/:id",
   authenticateToken,
   requireLandlord,
   async (req, res) => {
-
     try {
-
-      console.log(
-        "DELETE TENANT ID:",
-        req.params.id
-      );
-
-      console.log(
-        "DELETE LANDLORD ID:",
-        req.user.id
-      );
-
-
-      const tenant =
-        await findTenantById(
-          req.params.id,
-          req.user.id
-        );
-
-
+      const tenant = await findTenantById(req.params.id, req.user.id);
       if (!tenant) {
-
-        return res.status(404).json({
-          message: "Tenant not found"
-        });
-
+        return res.status(404).json({ message: "Tenant not found" });
       }
 
-
-      const result =
-        await deleteTenant(
-          req.params.id,
-          req.user.id
-        );
-
-
+      const result = await deleteTenant(req.params.id, req.user.id);
       if (result.changes === 0) {
-
-        return res.status(404).json({
-          message: "Tenant not found"
-        });
-
+        return res.status(404).json({ message: "Tenant not found" });
       }
-
 
       res.status(200).json({
-
-        message:
-          "Tenant deleted successfully"
-
+        message: "Tenant deleted successfully",
       });
-
     } catch (error) {
-
-      console.error(
-        "Delete tenant error:",
-        error
-      );
-
+      console.error("Delete tenant error:", error);
       res.status(500).json({
-
-        message:
-          "Failed to delete tenant"
-
+        message: "Failed to delete tenant",
       });
-
     }
-
   }
 );
 

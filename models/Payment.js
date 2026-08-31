@@ -3,6 +3,28 @@
 const db = require("./database");
 
 // =====================================================
+// CREATE PAYMENTS TABLE
+// =====================================================
+db.run(`
+  CREATE TABLE IF NOT EXISTS payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL,
+    landlord_id INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    due_date TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    paid_date TEXT,
+    paystack_reference TEXT UNIQUE,
+    paystack_transaction_id TEXT,
+    payment_method TEXT DEFAULT 'paystack',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, due_date),
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (landlord_id) REFERENCES users(id) ON DELETE CASCADE
+  )
+`);
+
+// =====================================================
 // DATE HELPERS
 // =====================================================
 function toDateString(date) {
@@ -111,7 +133,6 @@ async function ensureNextPayment(tenant) {
   const today = getToday();
   const existingPayments = await getPaymentsByTenant(tenant.id);
 
-  // Determine the active cycle: find the earliest unpaid cycle or next upcoming cycle (within 30 days)
   let cursorDate = new Date(leaseStart);
   let safetyCounter = 0;
 
@@ -119,12 +140,9 @@ async function ensureNextPayment(tenant) {
     const dueDateStr = toDateString(cursorDate);
     const existing = existingPayments.find((p) => p.due_date === dueDateStr);
 
-    // If this cycle hasn't been created yet:
     if (!existing) {
       const daysDiff = Math.floor((cursorDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
-      // Create if it is in the past, today, or upcoming within 30 days
       if (daysDiff <= 30) {
-        // Future due dates are created as 'upcoming', past or today are 'pending'
         const initialStatus = daysDiff > 0 ? "upcoming" : "pending";
 
         const newPayment = await createPayment({
@@ -139,12 +157,10 @@ async function ensureNextPayment(tenant) {
       break;
     }
 
-    // If it exists and is unpaid (upcoming, pending, or overdue), don't create future ones yet
     if (existing.status === "pending" || existing.status === "overdue" || existing.status === "upcoming") {
       break;
     }
 
-    // If it's already paid, advance to the next cycle
     cursorDate = getNextDueDate(cursorDate, interval);
     safetyCounter++;
   }
@@ -164,7 +180,6 @@ function updatePaymentStatuses() {
     overdueDate.setDate(overdueDate.getDate() - 7);
     const overdueDateString = toDateString(overdueDate);
 
-    // 1. Transition 'upcoming' payments to 'pending' if their due date has arrived (due_date <= today)
     db.run(
       `UPDATE payments
        SET status = 'pending'
@@ -173,7 +188,6 @@ function updatePaymentStatuses() {
       (err) => {
         if (err) return reject(err);
 
-        // 2. Transition 'pending' payments to 'overdue' if past 7 days overdue
         db.run(
           `UPDATE payments
            SET status = 'overdue'
