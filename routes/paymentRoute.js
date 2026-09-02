@@ -226,7 +226,7 @@ router.post("/initialize", authenticateToken, async (req, res) => {
     if (!payout || !payout.paystack_subaccount_code) {
       console.error("INITIALIZE ERROR: Missing Paystack subaccount");
       return res.status(400).json({
-        message: "The landlord has not connected a Paystack payout account",
+        message: "The landlord has not connected a Payment subaccount",
       });
     }
 

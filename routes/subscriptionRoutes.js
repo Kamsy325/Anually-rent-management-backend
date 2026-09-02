@@ -68,14 +68,20 @@ router.post("/initialize", authenticateToken, async (req, res) => {
 });
 
 // GET /subscription/verify/:reference
+// GET /subscription/verify/:reference
 router.get("/verify/:reference", authenticateToken, async (req, res) => {
   try {
     const { reference } = req.params;
     const data = await paystackService.verifyTransaction(reference);
 
     if (data.status === "success") {
-      // Extract plan_type from transaction metadata to prevent client spoofing
-      const planType = data.metadata?.plan_type || req.query.planType || "free";
+      // Look for plan_type or planType inside metadata sent during transaction init
+      const planType =
+        data.metadata?.plan_type ||
+        data.metadata?.planType ||
+        req.query.planType ||
+        "pro"; // Fallback if metadata is missing
+
       const landlordId = data.metadata?.landlord_id || req.user.id;
 
       const endDate = new Date();
