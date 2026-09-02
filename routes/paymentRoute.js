@@ -527,20 +527,6 @@ router.get("/verify/:reference", authenticateToken, async (req, res) => {
       paymentMethod: "paystack",
     });
 
-    if (req.user?.id) {
-      const formattedAmount = `$${Number(payment.amount).toLocaleString()}`;
-      await createNotification({
-        userId: req.user.id,
-        role: "tenant",
-        title: "Rent Paid Successfully",
-        message: `Your rent payment of ${formattedAmount} for ${
-          payment.apartment || "your apartment"
-        } was processed successfully.`,
-        type: "paid",
-        paymentId: payment.id,
-      });
-    }
-
     // 1. Notify Tenant
     if (req.user?.id) {
       const formattedAmount = `₦${Number(payment.amount).toLocaleString()}`;
@@ -556,9 +542,11 @@ router.get("/verify/:reference", authenticateToken, async (req, res) => {
       });
     }
 
-    // 2. Notify Landlord
+    // 2. Notify Landlord (Includes tenant name as senderName)
     if (payment.landlord_id) {
       const formattedAmount = `₦${Number(payment.amount).toLocaleString()}`;
+      const tenantName = payment.tenant_name || payment.tenant?.name || req.user.name || "A tenant";
+
       await createNotification({
         userId: payment.landlord_id,
         role: "landlord",
@@ -566,6 +554,7 @@ router.get("/verify/:reference", authenticateToken, async (req, res) => {
         message: `Payment of ${formattedAmount} for ${
           payment.apartment || "an apartment"
         } has been received.`,
+        senderName: tenantName,
         type: "paid",
         paymentId: payment.id,
       });

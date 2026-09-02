@@ -1,4 +1,3 @@
-// services/paystack.js
 const axios = require("axios");
 
 const PAYSTACK_BASE_URL = "https://api.paystack.co";
@@ -28,7 +27,11 @@ async function createSubaccount({ businessName, bankCode, accountNumber }) {
   return response.data.data;
 }
 
-// Subscription initialization (landlord paying platform)
+async function getSubaccount(subaccountCode) {
+  const response = await paystack.get(`/subaccount/${encodeURIComponent(subaccountCode)}`);
+  return response.data.data;
+}
+
 async function initializeSubscription({ email, amount, reference, callbackUrl }) {
   const amountInKobo = Math.round(Number(amount) * 100);
 
@@ -44,7 +47,6 @@ async function initializeSubscription({ email, amount, reference, callbackUrl })
   return response.data.data;
 }
 
-// Rent initialization with platform fee percentage split
 async function initializeRentPayment({
   email,
   amount,
@@ -86,6 +88,7 @@ async function verifyTransaction(reference) {
 module.exports = {
   getBanks,
   createSubaccount,
+  getSubaccount,
   initializeSubscription,
   initializeRentPayment,
   verifyTransaction,
