@@ -38,7 +38,7 @@ app.use(express.json());
 
 
 app.use(cors({
-  origin: "http://localhost:5173",
+  origin: "https://anually.vercel.app",
   optionSuccessStatus: 200
 }));
 
@@ -80,7 +80,7 @@ app.use(googleRoutes)
 
 console.log('paystack')
 const PORT =
-  process.env.PORT || 5000;
+  process.env.PORT || 3000;
 
 
 app.listen(

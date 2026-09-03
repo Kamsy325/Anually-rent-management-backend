@@ -46,7 +46,7 @@ router.post("/initialize", authenticateToken, async (req, res) => {
     // Convert Naira to Kobo for Paystack (Multiply by 100)
     const amountInKobo = Math.round(priceInNaira * 100);
     const reference = `SUB_${req.user.id}_${Date.now()}`;
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    const frontendUrl = process.env.FRONTEND_URL || "https://anually.vercel.app";
 
     const transaction = await paystackService.initializeSubscription({
       email: req.user.email,

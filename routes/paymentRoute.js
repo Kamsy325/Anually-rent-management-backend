@@ -268,7 +268,7 @@ router.post("/initialize", authenticateToken, async (req, res) => {
 
     const callbackUrl =
       process.env.PAYSTACK_CALLBACK_URL ||
-      "http://localhost:5173/payment/callback";
+      "https://anually.vercel.app/payment/callback";
 
     console.log("PAYSTACK CALLBACK URL:", callbackUrl);
 

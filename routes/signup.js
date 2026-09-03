@@ -49,7 +49,7 @@ router.post("/signup", async (req, res) => {
     );
 
     // Send Verification Email
-    const verificationUrl = `http://localhost:5173/verify-email?token=${verificationToken}`;
+    const verificationUrl = `https://anually.vercel.app/verify-email?token=${verificationToken}`;
 
     const mailOptions = {
       from: '"Annually" <no-reply@annually.com>',
