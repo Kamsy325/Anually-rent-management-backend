@@ -23,6 +23,11 @@ function addColumnIfMissing(
           return;
         }
 
+        if (!columns || columns.length === 0) {
+          // Table does not exist yet or has not been created; new tables already contain the columns
+          resolve();
+          return;
+        }
 
         const exists =
           columns.some(

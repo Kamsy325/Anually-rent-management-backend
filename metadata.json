@@ -1,6 +1,6 @@
 {
   "name": "Anually Rent Management Backend",
-  "description": "Backend API service for Anually Rent Management powering authentication, tenants, and payment processing.",
+  "description": "Backend API service for Anually Rent Management powering authentication, tenants, payments, and Turso LibSQL database connectivity.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
