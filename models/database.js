@@ -10,16 +10,77 @@ const DEFAULT_TURSO_URL =
 
 let clientInstance = null;
 let activeConfigKey = null;
+let isFallbackActive = false;
+
+function isAuthError(err) {
+  if (!err) return false;
+  const msg = (err.message || "").toLowerCase();
+  const causeStatus = err.cause && err.cause.status;
+  return (
+    causeStatus === 401 ||
+    causeStatus === 400 ||
+    causeStatus === 403 ||
+    err.status === 401 ||
+    err.status === 400 ||
+    err.status === 403 ||
+    msg.includes("401") ||
+    msg.includes("400") ||
+    msg.includes("403") ||
+    msg.includes("unauthorized") ||
+    msg.includes("jwt") ||
+    msg.includes("fetch failed") ||
+    msg.includes("enotfound") ||
+    msg.includes("econnrefused")
+  );
+}
+
+function activateFallback(reason) {
+  if (isFallbackActive) return;
+  isFallbackActive = true;
+  console.error(
+    `\n======================================================\n` +
+    `[Turso] CRITICAL AUTH ERROR (HTTP 401 Unauthorized)\n` +
+    `[Turso] Reason: ${reason}\n` +
+    `[Turso] The TURSO_AUTH_TOKEN configured in your environment is invalid, expired, or rejected by Turso.\n` +
+    `[Turso] To fix permanently:\n` +
+    `        1. Run: turso db tokens create anually-kamsy325\n` +
+    `        2. Update TURSO_AUTH_TOKEN in your Render.com dashboard (Environment tab)\n` +
+    `[Turso] Temporarily falling back to local SQLite database so your server stays online.\n` +
+    `======================================================\n`
+  );
+  try {
+    if (clientInstance) clientInstance.close();
+  } catch (e) {}
+  activeConfigKey = "local-sqlite-fallback";
+  clientInstance = createClient({
+    url: `file:${path.join(__dirname, "database.sqlite")}`,
+  });
+}
 
 /**
  * Returns the active LibSQL / Turso client instance.
  * Automatically falls back to local SQLite if remote URL is set but TURSO_AUTH_TOKEN is missing.
  */
 function getClient() {
-  const url = process.env.TURSO_DATABASE_URL || DEFAULT_TURSO_URL;
-  const authToken = process.env.TURSO_AUTH_TOKEN
-    ? process.env.TURSO_AUTH_TOKEN.trim()
+  if (isFallbackActive) {
+    if (!clientInstance) {
+      clientInstance = createClient({
+        url: `file:${path.join(__dirname, "database.sqlite")}`,
+      });
+    }
+    return clientInstance;
+  }
+
+  const rawUrl = process.env.TURSO_DATABASE_URL || DEFAULT_TURSO_URL;
+  const url = rawUrl ? rawUrl.trim().replace(/^["']|["']$/g, "") : "";
+  let authToken = process.env.TURSO_AUTH_TOKEN
+    ? process.env.TURSO_AUTH_TOKEN.trim().replace(/^["']|["']$/g, "")
     : "";
+
+  if (authToken === "undefined" || authToken === "null") {
+    authToken = "";
+  }
+
   const configKey = `${url}:::${authToken}`;
 
   if (!clientInstance || activeConfigKey !== configKey) {
@@ -82,11 +143,27 @@ const db = {
 
   // Promise-based Turso direct execution
   execute(sqlOrConfig) {
-    return getClient().execute(sqlOrConfig);
+    return getClient()
+      .execute(sqlOrConfig)
+      .catch((err) => {
+        if (isAuthError(err) && !isFallbackActive) {
+          activateFallback(err.message || "HTTP status 401");
+          return getClient().execute(sqlOrConfig);
+        }
+        throw err;
+      });
   },
 
   batch(statements, mode) {
-    return getClient().batch(statements, mode);
+    return getClient()
+      .batch(statements, mode)
+      .catch((err) => {
+        if (isAuthError(err) && !isFallbackActive) {
+          activateFallback(err.message || "HTTP status 401");
+          return getClient().batch(statements, mode);
+        }
+        throw err;
+      });
   },
 
   // SQLite3 callback-compatible run()
@@ -117,6 +194,11 @@ const db = {
         }
       })
       .catch((err) => {
+        if (isAuthError(err) && !isFallbackActive) {
+          activateFallback(err.message || "HTTP status 401");
+          return db.run(sql, actualParams, actualCallback);
+        }
+
         if (typeof actualCallback === "function") {
           actualCallback(err);
         } else {
@@ -152,6 +234,11 @@ const db = {
         }
       })
       .catch((err) => {
+        if (isAuthError(err) && !isFallbackActive) {
+          activateFallback(err.message || "HTTP status 401");
+          return db.get(sql, actualParams, actualCallback);
+        }
+
         if (typeof actualCallback === "function") {
           actualCallback(err, null);
         } else {
@@ -185,6 +272,11 @@ const db = {
         }
       })
       .catch((err) => {
+        if (isAuthError(err) && !isFallbackActive) {
+          activateFallback(err.message || "HTTP status 401");
+          return db.all(sql, actualParams, actualCallback);
+        }
+
         if (typeof actualCallback === "function") {
           actualCallback(err, []);
         } else {
@@ -208,6 +300,11 @@ const db = {
         }
       })
       .catch((err) => {
+        if (isAuthError(err) && !isFallbackActive) {
+          activateFallback(err.message || "HTTP status 401");
+          return db.exec(sql, callback);
+        }
+
         if (typeof callback === "function") {
           callback(err);
         } else {

@@ -1,5 +1,11 @@
 const express = require("express");
 const cors = require("cors");
+const dns = require("dns");
+
+// Force IPv4 DNS resolution first to prevent ENETUNREACH on Render and cloud hosts
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch (e) {}
 
 require("dotenv").config();
 

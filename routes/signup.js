@@ -13,22 +13,58 @@ const {
 } = require("../models/User");
 
 const router = express.Router();
+const dns = require("dns");
 
-// Email Transporter Config
-const transporter = nodemailer.createTransport({
-  service: "gmail", // or your SMTP provider
-  auth: {
-    user: process.env.EMAIL_USER, // your email
-    pass: process.env.EMAIL_PASS, // app-specific password
-  },
-});
+// Ensure IPv4 lookup takes precedence to avoid ENETUNREACH on cloud platforms
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch (e) {}
+
+/**
+ * Creates a Nodemailer transporter configured with IPv4 enforcement
+ * and optimal cloud host settings (Render, AWS, DigitalOcean).
+ */
+function createSmtpTransporter(port = 587, secure = false) {
+  const emailUser = (process.env.EMAIL_USER || "").trim();
+  // Strip any whitespace from the app password (e.g. Google's 4-char spaced format "xxxx xxxx xxxx xxxx")
+  const emailPass = (process.env.EMAIL_PASS || "").trim().replace(/\s+/g, "");
+
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port,
+    secure, // true for 465, false for 587 (uses STARTTLS)
+    auth: {
+      user: emailUser,
+      pass: emailPass,
+    },
+    tls: {
+      rejectUnauthorized: false,
+    },
+    family: 4, // CRITICAL: Forces IPv4 to completely prevent ENETUNREACH on Render/cloud instances
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+  });
+}
 
 async function dispatchVerificationEmail(email, firstName, verificationToken) {
   const frontendUrl = process.env.FRONTEND_URL || "https://anually.vercel.app";
   const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
 
+  const emailUser = (process.env.EMAIL_USER || "").trim();
+  const emailPass = (process.env.EMAIL_PASS || "").trim().replace(/\s+/g, "");
+
+  if (!emailUser || !emailPass) {
+    console.warn("[SIGNUP] EMAIL_USER or EMAIL_PASS not configured in environment variables. Skipping email dispatch.");
+    console.info(`[SIGNUP] Direct activation link: ${verificationUrl}`);
+    return { sent: false, error: "SMTP not configured", verificationUrl };
+  }
+
+  // Use the authenticated email in the 'from' field so Gmail SMTP does not reject or flag the message
+  const senderAddress = process.env.EMAIL_FROM || `"Annually" <${emailUser}>`;
+
   const mailOptions = {
-    from: '"Annually" <no-reply@annually.com>',
+    from: senderAddress,
     to: email,
     subject: "Activate Your Annually Account",
     html: `
@@ -41,20 +77,33 @@ async function dispatchVerificationEmail(email, firstName, verificationToken) {
     `,
   };
 
-  if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  const configuredPort = parseInt(process.env.SMTP_PORT || "587", 10);
+  const isConfiguredSecure = configuredPort === 465 || process.env.SMTP_SECURE === "true";
+
+  // Primary attempt: Port 587 (STARTTLS) or user-configured port
+  try {
+    const primaryTransporter = createSmtpTransporter(configuredPort, isConfiguredSecure);
+    await primaryTransporter.sendMail(mailOptions);
+    console.log(`[SIGNUP] Verification email successfully sent to ${email} via port ${configuredPort}`);
+    return { sent: true, verificationUrl };
+  } catch (primaryErr) {
+    console.warn(`[SIGNUP] Primary SMTP (port ${configuredPort}) failed:`, primaryErr.message);
+
+    // Fallback: If port 587 failed, attempt port 465 (SSL), or vice versa
+    const fallbackPort = configuredPort === 465 ? 587 : 465;
+    const fallbackSecure = fallbackPort === 465;
+
     try {
-      await transporter.sendMail(mailOptions);
-      console.log(`[SIGNUP] Verification email successfully sent to ${email}`);
+      console.log(`[SIGNUP] Attempting fallback SMTP on port ${fallbackPort}...`);
+      const fallbackTransporter = createSmtpTransporter(fallbackPort, fallbackSecure);
+      await fallbackTransporter.sendMail(mailOptions);
+      console.log(`[SIGNUP] Verification email successfully sent to ${email} via fallback port ${fallbackPort}`);
       return { sent: true, verificationUrl };
-    } catch (mailError) {
-      console.warn(`[SIGNUP] Failed to send verification email to ${email}:`, mailError.message);
+    } catch (fallbackErr) {
+      console.warn(`[SIGNUP] Fallback SMTP (port ${fallbackPort}) also failed:`, fallbackErr.message);
       console.info(`[SIGNUP] Direct activation link: ${verificationUrl}`);
-      return { sent: false, error: mailError.message, verificationUrl };
+      return { sent: false, error: primaryErr.message || fallbackErr.message, verificationUrl };
     }
-  } else {
-    console.warn("[SIGNUP] EMAIL_USER or EMAIL_PASS not configured. Skipping email dispatch.");
-    console.info(`[SIGNUP] Direct activation link: ${verificationUrl}`);
-    return { sent: false, error: "SMTP not configured", verificationUrl };
   }
 }
 
