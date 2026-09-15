@@ -3,11 +3,13 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
+const db = require("../models/database");
 const {
   createUser,
   findUserByEmail,
   findUserByVerificationToken,
   verifyUserAccount,
+  updateUserVerificationToken,
 } = require("../models/User");
 
 const router = express.Router();
@@ -21,80 +23,210 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+async function dispatchVerificationEmail(email, firstName, verificationToken) {
+  const frontendUrl = process.env.FRONTEND_URL || "https://anually.vercel.app";
+  const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
+
+  const mailOptions = {
+    from: '"Annually" <no-reply@annually.com>',
+    to: email,
+    subject: "Activate Your Annually Account",
+    html: `
+      <h2>Welcome to Annually, ${firstName}!</h2>
+      <p>Please click the link below to verify your email address and activate your account:</p>
+      <a href="${verificationUrl}" style="background: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+        Verify Email Account
+      </a>
+      <p>If you did not request this, please ignore this email.</p>
+    `,
+  };
+
+  if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log(`[SIGNUP] Verification email successfully sent to ${email}`);
+      return { sent: true, verificationUrl };
+    } catch (mailError) {
+      console.warn(`[SIGNUP] Failed to send verification email to ${email}:`, mailError.message);
+      console.info(`[SIGNUP] Direct activation link: ${verificationUrl}`);
+      return { sent: false, error: mailError.message, verificationUrl };
+    }
+  } else {
+    console.warn("[SIGNUP] EMAIL_USER or EMAIL_PASS not configured. Skipping email dispatch.");
+    console.info(`[SIGNUP] Direct activation link: ${verificationUrl}`);
+    return { sent: false, error: "SMTP not configured", verificationUrl };
+  }
+}
+
+// Track in-flight signup requests to prevent race conditions from double-clicks/submits
+const inFlightSignups = new Map();
+
 // ========================================
 // 1. SIGNUP ROUTE
 // ========================================
 router.post("/signup", async (req, res) => {
-  try {
-    const { first_name, last_name, email, password } = req.body;
+  const { first_name, last_name, email, password } = req.body;
 
-    if (!first_name || !last_name || !email || !password) {
-      return res.status(400).json({ message: "All fields are required" });
+  if (!first_name || !last_name || !email || !password) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // If a signup for this email is currently in progress, wait for it rather than creating a duplicate or throwing 409
+  if (inFlightSignups.has(normalizedEmail)) {
+    try {
+      const result = await inFlightSignups.get(normalizedEmail);
+      return res.status(result.status || 201).json(result.body);
+    } catch (err) {
+      console.error("[SIGNUP IN-FLIGHT ERROR]:", err);
     }
+  }
 
-    const existingUser = await findUserByEmail(email);
+  const signupPromise = (async () => {
+    const existingUser = await findUserByEmail(normalizedEmail);
+
     if (existingUser) {
-      return res.status(409).json({ message: "Email already exists" });
+      // If user is already verified, inform them to log in
+      if (existingUser.is_verified) {
+        return {
+          status: 409,
+          body: {
+            message: "An account with this email already exists and is verified. Please log in.",
+            is_verified: true,
+          },
+        };
+      }
+
+      // If user registered earlier but never verified, refresh token and resend verification
+      const verificationToken = crypto.randomBytes(32).toString("hex");
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      await new Promise((resolve, reject) => {
+        db.run(
+          `UPDATE users SET password = ?, first_name = ?, last_name = ?, verification_token = ? WHERE id = ?`,
+          [hashedPassword, first_name.trim(), last_name.trim(), verificationToken, existingUser.id],
+          (err) => (err ? reject(err) : resolve())
+        );
+      });
+
+      const emailResult = await dispatchVerificationEmail(normalizedEmail, first_name.trim(), verificationToken);
+
+      return {
+        status: 200,
+        body: {
+          message: "Confirmation link sent to your email.",
+          verificationUrl: process.env.NODE_ENV !== "production" ? emailResult.verificationUrl : undefined,
+          unverified: true,
+        },
+      };
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
     const verificationToken = crypto.randomBytes(32).toString("hex");
 
-    await createUser(
-      first_name,
-      last_name,
-      email,
-      hashedPassword,
-      verificationToken
-    );
-
-    // Send Verification Email
-    const frontendUrl = process.env.FRONTEND_URL || "https://anually.vercel.app";
-    const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
-
-    const mailOptions = {
-      from: '"Annually" <no-reply@annually.com>',
-      to: email,
-      subject: "Activate Your Annually Account",
-      html: `
-        <h2>Welcome to Annually, ${first_name}!</h2>
-        <p>Please click the link below to verify your email address and activate your account:</p>
-        <a href="${verificationUrl}" style="background: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
-          Verify Email Account
-        </a>
-        <p>If you did not request this, please ignore this email.</p>
-      `,
-    };
-
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      try {
-        await transporter.sendMail(mailOptions);
-        console.log(`[SIGNUP] Verification email successfully sent to ${email}`);
-      } catch (mailError) {
-        console.warn(`[SIGNUP] Failed to send verification email to ${email}:`, mailError.message);
-        console.info(`[SIGNUP] Direct activation link: ${verificationUrl}`);
+    try {
+      await createUser(
+        first_name.trim(),
+        last_name.trim(),
+        normalizedEmail,
+        hashedPassword,
+        verificationToken
+      );
+    } catch (insertErr) {
+      // If a collision occurred (e.g. concurrent insert), fetch user and return confirmation
+      console.warn("[SIGNUP] Collision during createUser, recovering:", insertErr.message);
+      const freshlyCreated = await findUserByEmail(normalizedEmail);
+      if (freshlyCreated) {
+        const emailResult = await dispatchVerificationEmail(
+          normalizedEmail,
+          first_name.trim(),
+          freshlyCreated.verification_token || verificationToken
+        );
+        return {
+          status: 201,
+          body: {
+            message: "Confirmation link sent to your email.",
+            verificationUrl: process.env.NODE_ENV !== "production" ? emailResult.verificationUrl : undefined,
+          },
+        };
       }
-    } else {
-      console.warn("[SIGNUP] EMAIL_USER or EMAIL_PASS not configured. Skipping email dispatch.");
-      console.info(`[SIGNUP] Direct activation link: ${verificationUrl}`);
+      throw insertErr;
     }
 
-    res.status(201).json({
-      message: "Confirmation link sent to your email.",
-      verificationUrl: process.env.NODE_ENV !== "production" ? verificationUrl : undefined,
-    });
+    const emailResult = await dispatchVerificationEmail(normalizedEmail, first_name.trim(), verificationToken);
+
+    return {
+      status: 201,
+      body: {
+        message: "Confirmation link sent to your email.",
+        verificationUrl: process.env.NODE_ENV !== "production" ? emailResult.verificationUrl : undefined,
+      },
+    };
+  })();
+
+  inFlightSignups.set(normalizedEmail, signupPromise);
+
+  try {
+    const result = await signupPromise;
+    return res.status(result.status).json(result.body);
   } catch (error) {
     console.error("SIGNUP ERROR:", error);
-    res.status(500).json({ message: "Something went wrong" });
+    return res.status(500).json({ message: "Something went wrong" });
+  } finally {
+    // Keep in-flight lock active briefly to absorb immediate double-submits
+    setTimeout(() => {
+      inFlightSignups.delete(normalizedEmail);
+    }, 2000);
   }
 });
 
 // ========================================
-// 2. VERIFY EMAIL ROUTE
+// 2. RESEND VERIFICATION EMAIL ROUTE
 // ========================================
-router.get("/verify-email", async (req, res) => {
+router.post("/resend-verification", async (req, res) => {
   try {
-    const { token } = req.query;
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await findUserByEmail(normalizedEmail);
+
+    if (!user) {
+      return res.status(404).json({ message: "No account found with this email" });
+    }
+
+    if (user.is_verified) {
+      return res.status(400).json({ message: "This account is already verified. Please log in." });
+    }
+
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+    await updateUserVerificationToken(user.id, verificationToken);
+
+    const emailResult = await dispatchVerificationEmail(
+      normalizedEmail,
+      user.first_name || "there",
+      verificationToken
+    );
+
+    return res.status(200).json({
+      message: "A fresh verification link has been sent to your email.",
+      verificationUrl: process.env.NODE_ENV !== "production" ? emailResult.verificationUrl : undefined,
+    });
+  } catch (error) {
+    console.error("RESEND VERIFICATION ERROR:", error);
+    res.status(500).json({ message: "Failed to resend verification email" });
+  }
+});
+
+// ========================================
+// 3. VERIFY EMAIL ROUTE (GET & POST)
+// ========================================
+const handleVerifyEmail = async (req, res) => {
+  try {
+    const token = req.query.token || req.body?.token;
 
     if (!token) {
       return res.status(400).json({ message: "Verification token is required" });
@@ -131,6 +263,9 @@ router.get("/verify-email", async (req, res) => {
     console.error("VERIFY ERROR:", error);
     res.status(500).json({ message: "Verification failed. Please try again." });
   }
-});
+};
+
+router.get("/verify-email", handleVerifyEmail);
+router.post("/verify-email", handleVerifyEmail);
 
 module.exports = router;

@@ -117,14 +117,19 @@ function createUser(
 // ========================================
 function findUserByEmail(email) {
   return new Promise((resolve, reject) => {
+    if (!email) {
+      resolve(null);
+      return;
+    }
+
     const sql = `
       SELECT *
       FROM users
-      WHERE email = ?
+      WHERE LOWER(email) = LOWER(?)
       LIMIT 1
     `;
 
-    db.get(sql, [email], (err, user) => {
+    db.get(sql, [email.trim().toLowerCase()], (err, user) => {
       if (err) {
         reject(err);
         return;
@@ -414,6 +419,20 @@ function findOrCreateGoogleUser(googleUser) {
   });
 }
 
+function updateUserVerificationToken(userId, token) {
+  return new Promise((resolve, reject) => {
+    const sql = `
+      UPDATE users
+      SET verification_token = ?
+      WHERE id = ?
+    `;
+    db.run(sql, [token, userId], function (err) {
+      if (err) return reject(err);
+      resolve({ updated: this.changes > 0 });
+    });
+  });
+}
+
 // ========================================
 // EXPORTS
 // ========================================
@@ -423,6 +442,7 @@ module.exports = {
   findUserById,
   findUserByVerificationToken,
   verifyUserAccount,
+  updateUserVerificationToken,
   updateUser,
   deleteUser,
   getPayoutInfo,
