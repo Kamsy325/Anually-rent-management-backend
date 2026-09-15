@@ -5,9 +5,15 @@ const PAYSTACK_BASE_URL = "https://api.paystack.co";
 const paystack = axios.create({
   baseURL: PAYSTACK_BASE_URL,
   headers: {
-    Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
     "Content-Type": "application/json",
   },
+});
+
+paystack.interceptors.request.use((config) => {
+  if (process.env.PAYSTACK_SECRET_KEY) {
+    config.headers.Authorization = `Bearer ${process.env.PAYSTACK_SECRET_KEY}`;
+  }
+  return config;
 });
 
 async function getBanks() {
@@ -32,7 +38,7 @@ async function getSubaccount(subaccountCode) {
   return response.data.data;
 }
 
-async function initializeSubscription({ email, amount, reference, callbackUrl }) {
+async function initializeSubscription({ email, amount, reference, callbackUrl, metadata }) {
   const amountInKobo = Math.round(Number(amount) * 100);
 
   const payload = {
@@ -42,6 +48,10 @@ async function initializeSubscription({ email, amount, reference, callbackUrl })
     reference,
     callback_url: callbackUrl,
   };
+
+  if (metadata) {
+    payload.metadata = metadata;
+  }
 
   const response = await paystack.post("/transaction/initialize", payload);
   return response.data.data;

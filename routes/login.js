@@ -1,5 +1,5 @@
 const express = require("express");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const { findUserByEmail } = require("../models/User");
@@ -69,12 +69,7 @@ router.post("/login", async (req, res) => {
     // =========================
     // JWT
     // =========================
-    if (!process.env.JWT_SECRET) {
-      console.error("JWT_SECRET is missing");
-      return res.status(500).json({
-        message: "Server authentication configuration error",
-      });
-    }
+    const jwtSecret = process.env.JWT_SECRET || "your_jwt_secret";
 
     const token = jwt.sign(
       {
@@ -82,7 +77,7 @@ router.post("/login", async (req, res) => {
         email: account.email,
         role,
       },
-      process.env.JWT_SECRET,
+      jwtSecret,
       {
         expiresIn: "7d",
       }

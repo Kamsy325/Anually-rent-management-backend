@@ -1,5 +1,5 @@
 const express = require("express");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
@@ -49,7 +49,8 @@ router.post("/signup", async (req, res) => {
     );
 
     // Send Verification Email
-    const verificationUrl = `https://anually.vercel.app/verify-email?token=${verificationToken}`;
+    const frontendUrl = process.env.FRONTEND_URL || "https://anually.vercel.app";
+    const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
 
     const mailOptions = {
       from: '"Annually" <no-reply@annually.com>',
@@ -65,10 +66,22 @@ router.post("/signup", async (req, res) => {
       `,
     };
 
-    await transporter.sendMail(mailOptions);
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      try {
+        await transporter.sendMail(mailOptions);
+        console.log(`[SIGNUP] Verification email successfully sent to ${email}`);
+      } catch (mailError) {
+        console.warn(`[SIGNUP] Failed to send verification email to ${email}:`, mailError.message);
+        console.info(`[SIGNUP] Direct activation link: ${verificationUrl}`);
+      }
+    } else {
+      console.warn("[SIGNUP] EMAIL_USER or EMAIL_PASS not configured. Skipping email dispatch.");
+      console.info(`[SIGNUP] Direct activation link: ${verificationUrl}`);
+    }
 
     res.status(201).json({
       message: "Confirmation link sent to your email.",
+      verificationUrl: process.env.NODE_ENV !== "production" ? verificationUrl : undefined,
     });
   } catch (error) {
     console.error("SIGNUP ERROR:", error);

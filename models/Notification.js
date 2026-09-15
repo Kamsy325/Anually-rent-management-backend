@@ -90,9 +90,15 @@ function markAsRead(notificationId, userId) {
 
 function markAllAsRead(userId, role) {
   return new Promise((resolve, reject) => {
+    let query = `UPDATE notifications SET is_read = 1 WHERE user_id = ?`;
+    let params = [userId];
+    if (role) {
+      query += ` AND role = ?`;
+      params.push(role);
+    }
     db.run(
-      `UPDATE notifications SET is_read = 1 WHERE user_id = ? AND role = ?`,
-      [userId, role],
+      query,
+      params,
       function (err) {
         if (err) return reject(err);
         resolve({ changes: this.changes });
@@ -101,10 +107,36 @@ function markAllAsRead(userId, role) {
   });
 }
 
+function getNotificationsByUser(userId) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT * FROM notifications 
+       WHERE user_id = ? 
+       ORDER BY created_at DESC LIMIT 20`,
+      [userId],
+      (err, rows) => (err ? reject(err) : resolve(rows || []))
+    );
+  });
+}
+
+function getUnreadNotificationCount(userId) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND is_read = 0`,
+      [userId],
+      (err, row) => (err ? reject(err) : resolve(row?.count || 0))
+    );
+  });
+}
+
 module.exports = {
   createNotification,
   getUserNotifications,
+  getNotificationsByUser,
+  getUnreadNotificationCount,
   markAsRead,
+  markNotificationAsRead: markAsRead,
   markAllAsRead,
+  markAllNotificationsAsRead: markAllAsRead,
   notificationExists,
 };

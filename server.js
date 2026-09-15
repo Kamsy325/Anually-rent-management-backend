@@ -38,8 +38,11 @@ app.use(express.json());
 
 
 app.use(cors({
-  origin: "https://anually.vercel.app",
-  optionSuccessStatus: 200
+  origin: (origin, callback) => {
+    callback(null, true);
+  },
+  credentials: true,
+  optionsSuccessStatus: 200
 }));
 
 
@@ -85,9 +88,10 @@ const PORT =
 
 app.listen(
   PORT,
+  "0.0.0.0",
   () => {
     console.log(
-      `Server started on port ${PORT}`
+      `Server started on port ${PORT} (0.0.0.0)`
     );
   }
 );

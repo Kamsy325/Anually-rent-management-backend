@@ -40,7 +40,7 @@ async function checkRentNotifications() {
   try {
     // 1. Target only relevant payments using SQL instead of filtering everything in JavaScript memory
     const payments = await dbAll(
-      `SELECT payments.*, tenants.name AS tenant_name, tenants.user_id AS tenant_user_id, tenants.apartment
+      `SELECT payments.*, tenants.name AS tenant_name, tenants.id AS tenant_user_id, tenants.apartment
        FROM payments
        INNER JOIN tenants ON tenants.id = payments.tenant_id
        WHERE payments.status != 'paid' 
@@ -154,7 +154,7 @@ async function checkPlanExpirations() {
 
   try {
     const subscriptions = await dbAll(
-      `SELECT * FROM subscriptions WHERE expires_at IS NOT NULL AND expires_at <= ? AND status = 'active'`,
+      `SELECT * FROM subscriptions WHERE current_period_end IS NOT NULL AND current_period_end <= ? AND status = 'active'`,
       [todayStr]
     );
 

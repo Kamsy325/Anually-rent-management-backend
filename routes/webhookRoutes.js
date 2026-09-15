@@ -7,6 +7,11 @@ const { updateSubscription } = require("../models/Subscription");
 router.post("/paystack", express.json(), async (req, res) => {
   try {
     const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      console.warn("[WEBHOOK WARNING] PAYSTACK_SECRET_KEY not set; unable to verify signature.");
+      return res.status(500).send("PAYSTACK_SECRET_KEY not set");
+    }
+
     const hash = crypto
       .createHmac("sha512", secret)
       .update(JSON.stringify(req.body))

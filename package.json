@@ -4,8 +4,10 @@
   "description": "",
   "main": "server.js",
   "scripts": {
+    "dev": "node server.js",
     "start": "node server.js",
     "build": "echo 'Build complete'",
+    "lint": "node --check server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -14,17 +16,14 @@
   "type": "commonjs",
   "dependencies": {
     "@libsql/client": "^0.18.0",
-    "agenda": "^6.2.6",
     "axios": "^1.19.0",
-    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "google-auth-library": "^11.0.2",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.9.1",
     "node-cron": "^4.6.0",
-    "nodemailer": "^9.1.0",
-    "sqlite3": "^5.1.7"
+    "nodemailer": "^9.1.0"
   }
 }

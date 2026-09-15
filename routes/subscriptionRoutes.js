@@ -43,14 +43,12 @@ router.post("/initialize", authenticateToken, async (req, res) => {
       return res.status(400).json({ message: "Invalid plan selected" });
     }
 
-    // Convert Naira to Kobo for Paystack (Multiply by 100)
-    const amountInKobo = Math.round(priceInNaira * 100);
     const reference = `SUB_${req.user.id}_${Date.now()}`;
     const frontendUrl = process.env.FRONTEND_URL || "https://anually.vercel.app";
 
     const transaction = await paystackService.initializeSubscription({
       email: req.user.email,
-      amount: amountInKobo,
+      amount: priceInNaira,
       reference,
       callbackUrl: `${frontendUrl}/subscription/callback?reference=${reference}`,
       // Embed metadata so the verification route / webhook does not trust query params

@@ -217,6 +217,48 @@ function getPaymentsByLandlord(landlordId) {
   });
 }
 
+function getUpcomingPayments(landlordId) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT payments.*, tenants.name AS tenant_name, tenants.email AS tenant_email, tenants.apartment AS apartment
+       FROM payments
+       INNER JOIN tenants ON tenants.id = payments.tenant_id
+       WHERE payments.landlord_id = ? AND payments.status = 'upcoming'
+       ORDER BY payments.due_date ASC`,
+      [landlordId],
+      (err, rows) => (err ? reject(err) : resolve(rows || []))
+    );
+  });
+}
+
+function getPendingPayments(landlordId) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT payments.*, tenants.name AS tenant_name, tenants.email AS tenant_email, tenants.apartment AS apartment
+       FROM payments
+       INNER JOIN tenants ON tenants.id = payments.tenant_id
+       WHERE payments.landlord_id = ? AND payments.status = 'pending'
+       ORDER BY payments.due_date ASC`,
+      [landlordId],
+      (err, rows) => (err ? reject(err) : resolve(rows || []))
+    );
+  });
+}
+
+function getOverduePayments(landlordId) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT payments.*, tenants.name AS tenant_name, tenants.email AS tenant_email, tenants.apartment AS apartment
+       FROM payments
+       INNER JOIN tenants ON tenants.id = payments.tenant_id
+       WHERE payments.landlord_id = ? AND payments.status = 'overdue'
+       ORDER BY payments.due_date ASC`,
+      [landlordId],
+      (err, rows) => (err ? reject(err) : resolve(rows || []))
+    );
+  });
+}
+
 function getRecentPaidPayments(landlordId) {
   return new Promise((resolve, reject) => {
     db.all(
@@ -294,6 +336,9 @@ module.exports = {
   updatePaymentStatuses,
   getPaymentsByTenant,
   getPaymentsByLandlord,
+  getUpcomingPayments,
+  getPendingPayments,
+  getOverduePayments,
   getRecentPaidPayments,
   getNextDueDate,
   getPaymentByReference,

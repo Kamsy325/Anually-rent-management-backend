@@ -30,10 +30,14 @@ function authenticateToken(
 
   try {
 
+    const jwtSecret =
+      process.env.JWT_SECRET ||
+      "your_jwt_secret";
+
     const decoded =
       jwt.verify(
         token,
-        process.env.JWT_SECRET
+        jwtSecret
       );
 
 
