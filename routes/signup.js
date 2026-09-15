@@ -21,8 +21,103 @@ try {
 } catch (e) {}
 
 /**
+ * Sends email via HTTP APIs (Resend, Brevo, SendGrid) over HTTPS (port 443),
+ * completely bypassing cloud hosting SMTP port blocks (such as Render free tier).
+ */
+async function sendViaHttpApi(email, firstName, verificationUrl, htmlContent) {
+  // 1. Resend (https://resend.com - Free tier: 3,000 emails/month)
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const apiKey = process.env.RESEND_API_KEY.trim();
+      const fromAddress = process.env.EMAIL_FROM || "Annually <onboarding@resend.dev>";
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: fromAddress,
+          to: [email],
+          subject: "Activate Your Annually Account",
+          html: htmlContent,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        console.log(`[SIGNUP] Email successfully delivered to ${email} via Resend HTTP API (id: ${data.id || "ok"})`);
+        return { success: true };
+      } else {
+        console.warn(`[SIGNUP] Resend API error:`, data);
+      }
+    } catch (err) {
+      console.warn(`[SIGNUP] Resend API request failed:`, err.message);
+    }
+  }
+
+  // 2. Brevo / Sendinblue (https://brevo.com - Free tier: 300 emails/day)
+  if (process.env.BREVO_API_KEY) {
+    try {
+      const apiKey = process.env.BREVO_API_KEY.trim();
+      const senderEmail = process.env.EMAIL_USER || "no-reply@annually.com";
+      const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          "api-key": apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sender: { name: "Annually", email: senderEmail },
+          to: [{ email, name: firstName }],
+          subject: "Activate Your Annually Account",
+          htmlContent,
+        }),
+      });
+
+      if (res.ok) {
+        console.log(`[SIGNUP] Email successfully delivered to ${email} via Brevo HTTP API`);
+        return { success: true };
+      }
+    } catch (err) {
+      console.warn(`[SIGNUP] Brevo API request failed:`, err.message);
+    }
+  }
+
+  // 3. SendGrid (https://sendgrid.com - Free tier: 100 emails/day)
+  if (process.env.SENDGRID_API_KEY) {
+    try {
+      const apiKey = process.env.SENDGRID_API_KEY.trim();
+      const senderEmail = process.env.EMAIL_USER || "no-reply@annually.com";
+      const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email }] }],
+          from: { email: senderEmail, name: "Annually" },
+          subject: "Activate Your Annually Account",
+          content: [{ type: "text/html", value: htmlContent }],
+        }),
+      });
+
+      if (res.ok || res.status === 202) {
+        console.log(`[SIGNUP] Email successfully delivered to ${email} via SendGrid HTTP API`);
+        return { success: true };
+      }
+    } catch (err) {
+      console.warn(`[SIGNUP] SendGrid API request failed:`, err.message);
+    }
+  }
+
+  return { success: false };
+}
+
+/**
  * Creates a Nodemailer transporter configured with IPv4 enforcement
- * and optimal cloud host settings (Render, AWS, DigitalOcean).
+ * and optimal cloud host settings.
  */
 function createSmtpTransporter(port = 587, secure = false) {
   const emailUser = (process.env.EMAIL_USER || "").trim();
@@ -40,10 +135,10 @@ function createSmtpTransporter(port = 587, secure = false) {
     tls: {
       rejectUnauthorized: false,
     },
-    family: 4, // CRITICAL: Forces IPv4 to completely prevent ENETUNREACH on Render/cloud instances
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+    family: 4, // Forces IPv4
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 8000,
   });
 }
 
@@ -51,11 +146,27 @@ async function dispatchVerificationEmail(email, firstName, verificationToken) {
   const frontendUrl = process.env.FRONTEND_URL || "https://anually.vercel.app";
   const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
 
+  const htmlContent = `
+    <h2>Welcome to Annually, ${firstName}!</h2>
+    <p>Please click the link below to verify your email address and activate your account:</p>
+    <a href="${verificationUrl}" style="background: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+      Verify Email Account
+    </a>
+    <p>If you did not request this, please ignore this email.</p>
+  `;
+
+  // First: Check if an HTTP Email API key is configured (Resend, Brevo, SendGrid)
+  // This bypasses Render's free-tier outbound SMTP port restrictions
+  const httpResult = await sendViaHttpApi(email, firstName, verificationUrl, htmlContent);
+  if (httpResult.success) {
+    return { sent: true, verificationUrl };
+  }
+
   const emailUser = (process.env.EMAIL_USER || "").trim();
   const emailPass = (process.env.EMAIL_PASS || "").trim().replace(/\s+/g, "");
 
   if (!emailUser || !emailPass) {
-    console.warn("[SIGNUP] EMAIL_USER or EMAIL_PASS not configured in environment variables. Skipping email dispatch.");
+    console.warn("[SIGNUP] EMAIL_USER, EMAIL_PASS, or RESEND_API_KEY not configured in environment variables.");
     console.info(`[SIGNUP] Direct activation link: ${verificationUrl}`);
     return { sent: false, error: "SMTP not configured", verificationUrl };
   }
@@ -67,20 +178,13 @@ async function dispatchVerificationEmail(email, firstName, verificationToken) {
     from: senderAddress,
     to: email,
     subject: "Activate Your Annually Account",
-    html: `
-      <h2>Welcome to Annually, ${firstName}!</h2>
-      <p>Please click the link below to verify your email address and activate your account:</p>
-      <a href="${verificationUrl}" style="background: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
-        Verify Email Account
-      </a>
-      <p>If you did not request this, please ignore this email.</p>
-    `,
+    html: htmlContent,
   };
 
   const configuredPort = parseInt(process.env.SMTP_PORT || "587", 10);
   const isConfiguredSecure = configuredPort === 465 || process.env.SMTP_SECURE === "true";
 
-  // Primary attempt: Port 587 (STARTTLS) or user-configured port
+  // Attempt SMTP
   try {
     const primaryTransporter = createSmtpTransporter(configuredPort, isConfiguredSecure);
     await primaryTransporter.sendMail(mailOptions);
@@ -89,7 +193,6 @@ async function dispatchVerificationEmail(email, firstName, verificationToken) {
   } catch (primaryErr) {
     console.warn(`[SIGNUP] Primary SMTP (port ${configuredPort}) failed:`, primaryErr.message);
 
-    // Fallback: If port 587 failed, attempt port 465 (SSL), or vice versa
     const fallbackPort = configuredPort === 465 ? 587 : 465;
     const fallbackSecure = fallbackPort === 465;
 
@@ -100,8 +203,11 @@ async function dispatchVerificationEmail(email, firstName, verificationToken) {
       console.log(`[SIGNUP] Verification email successfully sent to ${email} via fallback port ${fallbackPort}`);
       return { sent: true, verificationUrl };
     } catch (fallbackErr) {
-      console.warn(`[SIGNUP] Fallback SMTP (port ${fallbackPort}) also failed:`, fallbackErr.message);
-      console.info(`[SIGNUP] Direct activation link: ${verificationUrl}`);
+      console.warn(
+        `[SIGNUP] Outbound SMTP failed (Render free tier blocks SMTP ports 587 & 465).\n` +
+        `[SIGNUP] TIP: Add RESEND_API_KEY to your Render environment to send emails over HTTPS.\n` +
+        `[SIGNUP] Direct activation link: ${verificationUrl}`
+      );
       return { sent: false, error: primaryErr.message || fallbackErr.message, verificationUrl };
     }
   }
@@ -164,8 +270,11 @@ router.post("/signup", async (req, res) => {
       return {
         status: 200,
         body: {
-          message: "Confirmation link sent to your email.",
-          verificationUrl: process.env.NODE_ENV !== "production" ? emailResult.verificationUrl : undefined,
+          message: emailResult.sent
+            ? "Confirmation link sent to your email."
+            : "Account was previously created. Please use the activation link to verify your account.",
+          emailSent: emailResult.sent,
+          verificationUrl: emailResult.verificationUrl,
           unverified: true,
         },
       };
@@ -195,8 +304,11 @@ router.post("/signup", async (req, res) => {
         return {
           status: 201,
           body: {
-            message: "Confirmation link sent to your email.",
-            verificationUrl: process.env.NODE_ENV !== "production" ? emailResult.verificationUrl : undefined,
+            message: emailResult.sent
+              ? "Confirmation link sent to your email."
+              : "Account created! Please use the activation link below to verify your account.",
+            emailSent: emailResult.sent,
+            verificationUrl: emailResult.verificationUrl,
           },
         };
       }
@@ -208,8 +320,11 @@ router.post("/signup", async (req, res) => {
     return {
       status: 201,
       body: {
-        message: "Confirmation link sent to your email.",
-        verificationUrl: process.env.NODE_ENV !== "production" ? emailResult.verificationUrl : undefined,
+        message: emailResult.sent
+          ? "Confirmation link sent to your email."
+          : "Account created! Please use the activation link below to verify your account.",
+        emailSent: emailResult.sent,
+        verificationUrl: emailResult.verificationUrl,
       },
     };
   })();
@@ -261,8 +376,11 @@ router.post("/resend-verification", async (req, res) => {
     );
 
     return res.status(200).json({
-      message: "A fresh verification link has been sent to your email.",
-      verificationUrl: process.env.NODE_ENV !== "production" ? emailResult.verificationUrl : undefined,
+      message: emailResult.sent
+        ? "A fresh verification link has been sent to your email."
+        : "Fresh verification link generated.",
+      emailSent: emailResult.sent,
+      verificationUrl: emailResult.verificationUrl,
     });
   } catch (error) {
     console.error("RESEND VERIFICATION ERROR:", error);
