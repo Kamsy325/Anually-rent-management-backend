@@ -95,9 +95,15 @@ async function migrateUsers() {
       "INTEGER DEFAULT 0"
     );
 
+    // Ensure all existing user accounts are active/verified
+    await new Promise((resolve) => {
+      db.run("UPDATE users SET is_verified = 1 WHERE is_verified = 0 OR is_verified IS NULL", [], () => {
+        resolve();
+      });
+    });
 
     console.log(
-      "User Paystack fields ready"
+      "User Paystack fields and verification states ready"
     );
 
   } catch (error) {

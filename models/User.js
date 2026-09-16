@@ -52,7 +52,8 @@ function createUser(
   address = "",
   bio = "",
   leaseInterval = "monthly",
-  role = "landlord"
+  role = "landlord",
+  isVerified = 1
 ) {
   return new Promise((resolve, reject) => {
     const sql = `
@@ -70,7 +71,7 @@ function createUser(
         lease_interval,
         role
       )
-      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     db.run(
@@ -81,6 +82,7 @@ function createUser(
         email,
         password,
         verificationToken,
+        isVerified,
         phoneNo,
         companyName,
         address,
@@ -105,7 +107,7 @@ function createUser(
           bio,
           leaseInterval,
           role,
-          isVerified: 0,
+          isVerified,
         });
       }
     );

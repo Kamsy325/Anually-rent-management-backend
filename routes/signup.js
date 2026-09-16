@@ -25,7 +25,44 @@ try {
  * completely bypassing cloud hosting SMTP port blocks (such as Render free tier).
  */
 async function sendViaHttpApi(email, firstName, verificationUrl, htmlContent) {
-  // 1. Resend (https://resend.com - Free tier: 3,000 emails/month)
+  // 1. Brevo / Sendinblue (https://brevo.com - Free tier: 300 emails/day, no domain purchase required)
+  if (process.env.BREVO_API_KEY) {
+    try {
+      const apiKey = process.env.BREVO_API_KEY.trim();
+      const senderEmail = (process.env.BREVO_SENDER_EMAIL || process.env.EMAIL_USER || "").trim();
+
+      if (!senderEmail) {
+        console.warn("[SIGNUP] BREVO_API_KEY is configured, but BREVO_SENDER_EMAIL or EMAIL_USER is missing. Set your Brevo account email in Render environment variables.");
+      } else {
+        const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+          method: "POST",
+          headers: {
+            "api-key": apiKey,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+          },
+          body: JSON.stringify({
+            sender: { name: "Annually", email: senderEmail },
+            to: [{ email, name: firstName || "User" }],
+            subject: "Activate Your Annually Account",
+            htmlContent,
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          console.log(`[SIGNUP] Email successfully delivered to ${email} via Brevo HTTP API (messageId: ${data.messageId || "ok"})`);
+          return { success: true };
+        } else {
+          console.warn(`[SIGNUP] Brevo API error response:`, data);
+        }
+      }
+    } catch (err) {
+      console.warn(`[SIGNUP] Brevo API request failed:`, err.message);
+    }
+  }
+
+  // 2. Resend (https://resend.com - Free tier: 3,000 emails/month)
   if (process.env.RESEND_API_KEY) {
     try {
       const apiKey = process.env.RESEND_API_KEY.trim();
@@ -53,34 +90,6 @@ async function sendViaHttpApi(email, firstName, verificationUrl, htmlContent) {
       }
     } catch (err) {
       console.warn(`[SIGNUP] Resend API request failed:`, err.message);
-    }
-  }
-
-  // 2. Brevo / Sendinblue (https://brevo.com - Free tier: 300 emails/day)
-  if (process.env.BREVO_API_KEY) {
-    try {
-      const apiKey = process.env.BREVO_API_KEY.trim();
-      const senderEmail = process.env.EMAIL_USER || "no-reply@annually.com";
-      const res = await fetch("https://api.brevo.com/v3/smtp/email", {
-        method: "POST",
-        headers: {
-          "api-key": apiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sender: { name: "Annually", email: senderEmail },
-          to: [{ email, name: firstName }],
-          subject: "Activate Your Annually Account",
-          htmlContent,
-        }),
-      });
-
-      if (res.ok) {
-        console.log(`[SIGNUP] Email successfully delivered to ${email} via Brevo HTTP API`);
-        return { success: true };
-      }
-    } catch (err) {
-      console.warn(`[SIGNUP] Brevo API request failed:`, err.message);
     }
   }
 
@@ -242,89 +251,71 @@ router.post("/signup", async (req, res) => {
     const existingUser = await findUserByEmail(normalizedEmail);
 
     if (existingUser) {
-      // If user is already verified, inform them to log in
-      if (existingUser.is_verified) {
-        return {
-          status: 409,
-          body: {
-            message: "An account with this email already exists and is verified. Please log in.",
-            is_verified: true,
-          },
-        };
-      }
-
-      // If user registered earlier but never verified, refresh token and resend verification
-      const verificationToken = crypto.randomBytes(32).toString("hex");
-      const hashedPassword = await bcrypt.hash(password, 12);
-
-      await new Promise((resolve, reject) => {
-        db.run(
-          `UPDATE users SET password = ?, first_name = ?, last_name = ?, verification_token = ? WHERE id = ?`,
-          [hashedPassword, first_name.trim(), last_name.trim(), verificationToken, existingUser.id],
-          (err) => (err ? reject(err) : resolve())
-        );
-      });
-
-      const emailResult = await dispatchVerificationEmail(normalizedEmail, first_name.trim(), verificationToken);
-
       return {
-        status: 200,
+        status: 409,
         body: {
-          message: emailResult.sent
-            ? "Confirmation link sent to your email."
-            : "Account was previously created. Please use the activation link to verify your account.",
-          emailSent: emailResult.sent,
-          verificationUrl: emailResult.verificationUrl,
-          unverified: true,
+          message: "An account with this email already exists. Please log in.",
+          is_verified: true,
         },
       };
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
+    // Keep generating and storing verificationToken so you can turn verification back on later
     const verificationToken = crypto.randomBytes(32).toString("hex");
 
+    let createdUser;
     try {
-      await createUser(
+      createdUser = await createUser(
         first_name.trim(),
         last_name.trim(),
         normalizedEmail,
         hashedPassword,
-        verificationToken
+        verificationToken,
+        "",
+        "",
+        "",
+        "",
+        "monthly",
+        "landlord",
+        1 // Instantly verified
       );
     } catch (insertErr) {
-      // If a collision occurred (e.g. concurrent insert), fetch user and return confirmation
       console.warn("[SIGNUP] Collision during createUser, recovering:", insertErr.message);
-      const freshlyCreated = await findUserByEmail(normalizedEmail);
-      if (freshlyCreated) {
-        const emailResult = await dispatchVerificationEmail(
-          normalizedEmail,
-          first_name.trim(),
-          freshlyCreated.verification_token || verificationToken
-        );
-        return {
-          status: 201,
-          body: {
-            message: emailResult.sent
-              ? "Confirmation link sent to your email."
-              : "Account created! Please use the activation link below to verify your account.",
-            emailSent: emailResult.sent,
-            verificationUrl: emailResult.verificationUrl,
-          },
-        };
+      createdUser = await findUserByEmail(normalizedEmail);
+      if (!createdUser) {
+        throw insertErr;
       }
-      throw insertErr;
     }
 
-    const emailResult = await dispatchVerificationEmail(normalizedEmail, first_name.trim(), verificationToken);
+    // Still generate email link / attempt background dispatch so you can restore anytime
+    dispatchVerificationEmail(normalizedEmail, first_name.trim(), verificationToken).catch((err) => {
+      console.warn("[SIGNUP BACKGROUND EMAIL NOTICE]:", err.message);
+    });
+
+    // Generate JWT auth token so user is automatically authenticated immediately after sign up
+    const jwtSecret = process.env.JWT_SECRET || "your_jwt_secret";
+    const token = jwt.sign(
+      { id: createdUser.id, email: normalizedEmail, role: "landlord" },
+      jwtSecret,
+      { expiresIn: "7d" }
+    );
 
     return {
       status: 201,
       body: {
-        message: emailResult.sent
-          ? "Confirmation link sent to your email."
-          : "Account created! Please use the activation link below to verify your account.",
-        emailSent: emailResult.sent,
-        verificationUrl: emailResult.verificationUrl,
+        message: "Account created and verified successfully!",
+        token,
+        role: "landlord",
+        is_verified: 1,
+        verificationToken,
+        user: {
+          id: createdUser.id,
+          firstName: first_name.trim(),
+          lastName: last_name.trim(),
+          email: normalizedEmail,
+          role: "landlord",
+        },
       },
     };
   })();
