@@ -44,7 +44,7 @@ router.post("/initialize", authenticateToken, async (req, res) => {
     }
 
     const reference = `SUB_${req.user.id}_${Date.now()}`;
-    const frontendUrl = process.env.FRONTEND_URL || "https://anually.vercel.app";
+    const frontendUrl = process.env.FRONTEND_URL || "https://anually.netlify.app";
 
     const transaction = await paystackService.initializeSubscription({
       email: req.user.email,

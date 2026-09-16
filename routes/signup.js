@@ -143,7 +143,7 @@ function createSmtpTransporter(port = 587, secure = false) {
 }
 
 async function dispatchVerificationEmail(email, firstName, verificationToken) {
-  const frontendUrl = process.env.FRONTEND_URL || "https://anually.vercel.app";
+  const frontendUrl = process.env.FRONTEND_URL || "https://anually.netlify.app";
   const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
 
   const htmlContent = `
