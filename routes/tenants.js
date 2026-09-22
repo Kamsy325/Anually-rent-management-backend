@@ -1,10 +1,8 @@
-// routes/tenants.js
 const express = require("express");
-const bcrypt = require("bcryptjs");
+const bcrypt = require("bcrypt");
 
 const authenticateToken = require("../middleware/auth");
 const requireLandlord = require("../middleware/requireLandlord");
-const checkTenantLimit = require("../middleware/checkTenantLimit");
 
 const {
   createTenant,
@@ -28,7 +26,6 @@ router.get(
     try {
       const databaseTenants = await getTenantsByLandlord(req.user.id);
       
-      // Normalize status strictly to "Active" or "Locked"
       const tenants = databaseTenants.map((t) => ({
         ...t,
         status: String(t.status || "").toLowerCase() === "locked" ? "Locked" : "Active",
@@ -69,14 +66,13 @@ router.get(
 );
 
 // =====================================================
-// CREATE TENANT
+// CREATE TENANT (UNLIMITED TENANTS - NO LIMIT CHECK)
 // POST /tenants
 // =====================================================
 router.post(
   "/tenants",
   authenticateToken,
   requireLandlord,
-  checkTenantLimit, // Enforces tier limit check before creation
   async (req, res) => {
     try {
       const {

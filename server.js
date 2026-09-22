@@ -1,103 +1,59 @@
 const express = require("express");
 const cors = require("cors");
-const dns = require("dns");
-
-// Force IPv4 DNS resolution first to prevent ENETUNREACH on Render and cloud hosts
-try {
-  dns.setDefaultResultOrder("ipv4first");
-} catch (e) {}
 
 require("dotenv").config();
 
-const signup =
-  require("./routes/signup.js");
-
-const login =
-  require("./routes/login.js");
-
-const getUser =
-  require("./routes/getUser.js");
-
-const tenants =
-  require("./routes/tenants.js");
-
-const payments = require('./routes/payments.js')
-const paymentRoutes = require('./routes/paymentRoute.js')
-const dashboard = require('./routes/dashboard.js')
-const migrateUsers = require('./models/migrateUsers.js')
-
-const updateProfile = require("./routes/updateProfile.js")
-
-const paystackRoutes = require("./routes/paystack.js")
-
+const signup = require("./routes/signup.js");
+const login = require("./routes/login.js");
+const getUser = require("./routes/getUser.js");
+const tenants = require("./routes/tenants.js");
+const payments = require("./routes/payments.js");
+const paymentRoutes = require("./routes/paymentRoute.js");
+const dashboard = require("./routes/dashboard.js");
+const migrateUsers = require("./models/migrateUsers.js");
+const updateProfile = require("./routes/updateProfile.js");
+const paystackRoutes = require("./routes/paystack.js");
 const notificationRoutes = require("./routes/notificationRoutes");
 const { startNotificationScheduler } = require("./services/notificationScheduler");
-const subscriptionRoutes = require("./routes/subscriptionRoutes.js")
-const webhookRoutes = require('./routes/webhookRoutes.js')
-const googleRoutes = require('./routes/googleRoutes.js')
-
+const webhookRoutes = require("./routes/webhookRoutes.js");
+const googleRoutes = require("./routes/googleRoutes.js");
 
 const app = express();
 
-
 app.use(express.json());
 
-
-app.use(cors({
-  origin: (origin, callback) => {
-    callback(null, true);
-  },
-  credentials: true,
-  optionsSuccessStatus: 200
-}));
-
+app.use(
+  cors({
+    origin: "https://anually.vercel.app",
+    optionSuccessStatus: 200,
+  })
+);
 
 app.get("/", (req, res) => {
   res.send("Hello world");
 });
 
-migrateUsers()
+migrateUsers();
 
 app.use("/notifications", notificationRoutes);
 
 // Start daily cron job
 startNotificationScheduler();
 
-console.log('app.use(payments)')
-
-app.use(payments)
-app.use(webhookRoutes)
-console.log('app.use(dashboard)')
-app.use(dashboard)
-
+app.use(payments);
+app.use(webhookRoutes);
+app.use(dashboard);
 app.use(signup);
-
 app.use(login);
-
 app.use(getUser);
-
 app.use(tenants);
+app.use(updateProfile);
+app.use(paystackRoutes);
+app.use("/payments", paymentRoutes);
+app.use(googleRoutes);
 
-app.use(updateProfile)
+const PORT = process.env.PORT || 3000;
 
-console.log('paystackRoutes')
-app.use(paystackRoutes)
-app.use('/payments', paymentRoutes)
-
-app.use('/subscription', subscriptionRoutes)
-app.use(googleRoutes)
-
-console.log('paystack')
-const PORT =
-  process.env.PORT || 3000;
-
-
-app.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
-    console.log(
-      `Server started on port ${PORT} (0.0.0.0)`
-    );
-  }
-);
+app.listen(PORT, () => {
+  console.log(`Server started on port ${PORT}`);
+});

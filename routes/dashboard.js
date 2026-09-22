@@ -1,4 +1,3 @@
-// routes/dashboard.js
 const express = require("express");
 const authenticateToken = require("../middleware/auth");
 const requireLandlord = require("../middleware/requireLandlord");
@@ -14,8 +13,6 @@ const {
   updatePaymentStatuses,
   ensureNextPayment,
 } = require("../models/Payment");
-
-const { getLandlordSubscription } = require("../models/Subscription");
 
 const router = express.Router();
 
@@ -190,7 +187,7 @@ router.get("/dashboard-data", authenticateToken, requireLandlord, async (req, re
 });
 
 // =====================================================
-// TENANT DASHBOARD
+// TENANT DASHBOARD (NO SUBSCRIPTION LOCKING)
 // GET /tenant-dashboard-data
 // =====================================================
 router.get("/tenant-dashboard-data", authenticateToken, async (req, res) => {
@@ -208,31 +205,14 @@ router.get("/tenant-dashboard-data", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Tenant record not found" });
     }
 
-    // Check Landlord Subscription Status
-    let isLandlordPlanExpired = false;
-    if (tenant.landlord_id) {
-      const subscription = await getLandlordSubscription(tenant.landlord_id);
-      const now = new Date();
-      const periodEnd = subscription?.current_period_end ? new Date(subscription.current_period_end) : null;
-
-      if (
-        !subscription ||
-        subscription.status !== "active" ||
-        (subscription.plan_type !== "free" && periodEnd && periodEnd < now)
-      ) {
-        isLandlordPlanExpired = true;
-      }
-    }
-
-    // Determine strict binary status: Locked vs Active
     const rawStatus = String(tenant.status || "").toLowerCase();
-    const isLocked = rawStatus === "locked" || isLandlordPlanExpired;
+    const isLocked = rawStatus === "locked";
     const computedStatus = isLocked ? "Locked" : "Active";
 
     if (isLocked) {
       return res.status(403).json({
         isLocked: true,
-        message: "Your account is locked because your landlord's plan has expired.",
+        message: "Your account is currently locked. Please contact your property manager.",
         tenant: {
           id: tenant.id,
           name: tenant.name,

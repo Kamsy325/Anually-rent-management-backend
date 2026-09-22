@@ -5,15 +5,9 @@ const PAYSTACK_BASE_URL = "https://api.paystack.co";
 const paystack = axios.create({
   baseURL: PAYSTACK_BASE_URL,
   headers: {
+    Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
     "Content-Type": "application/json",
   },
-});
-
-paystack.interceptors.request.use((config) => {
-  if (process.env.PAYSTACK_SECRET_KEY) {
-    config.headers.Authorization = `Bearer ${process.env.PAYSTACK_SECRET_KEY}`;
-  }
-  return config;
 });
 
 async function getBanks() {
@@ -38,31 +32,12 @@ async function getSubaccount(subaccountCode) {
   return response.data.data;
 }
 
-async function initializeSubscription({ email, amount, reference, callbackUrl, metadata }) {
-  const amountInKobo = Math.round(Number(amount) * 100);
-
-  const payload = {
-    email,
-    amount: amountInKobo,
-    currency: "NGN",
-    reference,
-    callback_url: callbackUrl,
-  };
-
-  if (metadata) {
-    payload.metadata = metadata;
-  }
-
-  const response = await paystack.post("/transaction/initialize", payload);
-  return response.data.data;
-}
-
 async function initializeRentPayment({
   email,
   amount,
   reference,
   subaccountCode,
-  platformFeePercent,
+  platformFeePercent = 3.0,
   callbackUrl,
 }) {
   const amountInKobo = Math.round(Number(amount) * 100);
@@ -73,12 +48,10 @@ async function initializeRentPayment({
     currency: "NGN",
     reference,
     subaccount: subaccountCode,
+    // Landlord bears both Paystack processing fee and platform transaction fee
     bearer: "subaccount",
+    percentage_charge: Number(platformFeePercent || 3.0),
   };
-
-  if (platformFeePercent > 0) {
-    payload.percentage_charge = platformFeePercent;
-  }
 
   if (callbackUrl) {
     payload.callback_url = callbackUrl;
@@ -99,7 +72,6 @@ module.exports = {
   getBanks,
   createSubaccount,
   getSubaccount,
-  initializeSubscription,
   initializeRentPayment,
   verifyTransaction,
 };
