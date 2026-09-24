@@ -24,7 +24,8 @@ app.use(express.json());
 
 app.use(
   cors({
-    origin: "https://anually.vercel.app",
+    origin: true,
+    credentials: true,
     optionSuccessStatus: 200,
   })
 );
@@ -54,6 +55,6 @@ app.use(googleRoutes);
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server started on port ${PORT}`);
 });

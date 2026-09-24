@@ -1,5 +1,5 @@
 const express = require("express");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 
 const authenticateToken = require("../middleware/auth");
 const requireLandlord = require("../middleware/requireLandlord");
