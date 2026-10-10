@@ -16,8 +16,8 @@ const {
 
 const { getPayoutInfo } = require("../models/User");
 
-// Flat 3% platform fee on all transactions
-const PLATFORM_FEE_PERCENT = 3.0;
+// Flat 1.5% platform fee on all transactions
+const PLATFORM_FEE_PERCENT = 1.5;
 
 const router = express.Router();
 
@@ -102,7 +102,7 @@ router.post("/initialize", authenticateToken, async (req, res) => {
       });
     }
 
-    // Initialize Paystack with flat 3% platform fee & landlord pays fees (bearer: subaccount)
+    // Initialize Paystack with flat 1.5% platform fee & landlord pays fees (bearer: subaccount)
     const transaction = await initializeRentPayment({
       email: tenantEmail,
       amount,
@@ -155,17 +155,17 @@ router.get("/verify/:reference", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Local payment record not found" });
     }
 
-    // Financial calculations: Flat 3% fee + Paystack fee paid by landlord
+    // Financial calculations: Flat 1.5% fee + Paystack fee paid by landlord
     const totalAmount = transaction.amount / 100;
     const paystackFee = transaction.fees / 100;
     const platformCommission = totalAmount * (PLATFORM_FEE_PERCENT / 100);
     const landlordPayout = totalAmount - paystackFee - platformCommission;
 
     console.log("--------------------------------------------------");
-    console.log("💰 FINANCIAL BREAKDOWN (FLAT 3% FEE)");
+    console.log("💰 FINANCIAL BREAKDOWN (FLAT 1.5% FEE)");
     console.log(`Gross Charged to Tenant: ₦${totalAmount.toLocaleString()}`);
     console.log(`Paystack Processing Fee: -₦${paystackFee.toLocaleString()} (Paid by Landlord)`);
-    console.log(`Platform Commission (3%): +₦${platformCommission.toLocaleString()} (Retained on Main Account)`);
+    console.log(`Platform Commission (1.5%): +₦${platformCommission.toLocaleString()} (Retained on Main Account)`);
     console.log(`Landlord Net Payout:     +₦${landlordPayout.toLocaleString()}`);
     console.log("--------------------------------------------------");
 

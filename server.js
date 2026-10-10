@@ -18,6 +18,8 @@ const { startNotificationScheduler } = require("./services/notificationScheduler
 const webhookRoutes = require("./routes/webhookRoutes.js");
 const googleRoutes = require("./routes/googleRoutes.js");
 
+const subscriptionRoutes = require("./routes/subscriptionRoutes.js");
+
 const app = express();
 
 app.use(express.json());
@@ -51,10 +53,12 @@ app.use(tenants);
 app.use(updateProfile);
 app.use(paystackRoutes);
 app.use("/payments", paymentRoutes);
+app.use("/subscription", subscriptionRoutes);
 app.use(googleRoutes);
 
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server started on port ${PORT}`);
 });
+

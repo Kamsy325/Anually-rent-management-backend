@@ -235,6 +235,27 @@ router.post("/signup", async (req, res) => {
     return res.status(400).json({ message: "All fields are required" });
   }
 
+  // Support rent_interval / lease_interval in signup flow
+  const rawInterval =
+    req.body.rent_interval ||
+    req.body.rentInterval ||
+    req.body.lease_interval ||
+    req.body.leaseInterval;
+
+  let interval = "monthly";
+  if (rawInterval !== undefined && rawInterval !== null && String(rawInterval).trim() !== "") {
+    const cleaned = String(rawInterval).trim().toLowerCase();
+    if (cleaned === "annual" || cleaned === "annually" || cleaned === "yearly") {
+      interval = "annually";
+    } else if (cleaned === "monthly" || cleaned === "month") {
+      interval = "monthly";
+    } else {
+      return res.status(400).json({
+        message: "Rent interval must be either 'monthly' or 'annually'",
+      });
+    }
+  }
+
   const normalizedEmail = email.trim().toLowerCase();
 
   // If a signup for this email is currently in progress, wait for it rather than creating a duplicate or throwing 409
@@ -276,7 +297,7 @@ router.post("/signup", async (req, res) => {
         "",
         "",
         "",
-        "monthly",
+        interval,
         "landlord",
         1 // Instantly verified
       );
@@ -315,6 +336,8 @@ router.post("/signup", async (req, res) => {
           lastName: last_name.trim(),
           email: normalizedEmail,
           role: "landlord",
+          rent_interval: interval,
+          lease_interval: interval,
         },
       },
     };
@@ -415,6 +438,8 @@ const handleVerifyEmail = async (req, res) => {
         firstName: user.first_name,
         lastName: user.last_name,
         email: user.email,
+        rent_interval: user.lease_interval || "monthly",
+        lease_interval: user.lease_interval || "monthly",
       },
     });
   } catch (error) {

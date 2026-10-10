@@ -106,6 +106,8 @@ function createUser(
           address,
           bio,
           leaseInterval,
+          lease_interval: leaseInterval,
+          rent_interval: leaseInterval,
           role,
           isVerified,
         });

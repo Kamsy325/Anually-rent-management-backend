@@ -37,7 +37,7 @@ async function initializeRentPayment({
   amount,
   reference,
   subaccountCode,
-  platformFeePercent = 3.0,
+  platformFeePercent = 1.5,
   callbackUrl,
 }) {
   const amountInKobo = Math.round(Number(amount) * 100);
@@ -50,7 +50,7 @@ async function initializeRentPayment({
     subaccount: subaccountCode,
     // Landlord bears both Paystack processing fee and platform transaction fee
     bearer: "subaccount",
-    percentage_charge: Number(platformFeePercent || 3.0),
+    percentage_charge: Number(platformFeePercent !== undefined && platformFeePercent !== null ? platformFeePercent : 1.5),
   };
 
   if (callbackUrl) {

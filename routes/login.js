@@ -96,6 +96,8 @@ router.post("/login", async (req, res) => {
           firstName: account.first_name,
           lastName: account.last_name,
           email: account.email,
+          rent_interval: account.lease_interval || "monthly",
+          lease_interval: account.lease_interval || "monthly",
         },
       });
     }

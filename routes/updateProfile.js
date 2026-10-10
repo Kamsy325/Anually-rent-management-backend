@@ -32,9 +32,13 @@ router.put(
         company_name,
         address,
         bio,
-        lease_interval
       } = req.body;
 
+      const rawInterval =
+        req.body.rent_interval ||
+        req.body.rentInterval ||
+        req.body.lease_interval ||
+        req.body.leaseInterval;
 
       // =================================================
       // VALIDATION
@@ -55,19 +59,21 @@ router.put(
 
 
       // =================================================
-      // CHECK LEASE INTERVAL
+      // CHECK LEASE / RENT INTERVAL
       // =================================================
 
-      if (
-        lease_interval !== "monthly" &&
-        lease_interval !== "annually"
-      ) {
-
-        return res.status(400).json({
-          message:
-            "Lease interval must be monthly or annually"
-        });
-
+      let lease_interval = "monthly";
+      if (rawInterval) {
+        const cleaned = String(rawInterval).trim().toLowerCase();
+        if (cleaned === "annual" || cleaned === "annually" || cleaned === "yearly") {
+          lease_interval = "annually";
+        } else if (cleaned === "monthly") {
+          lease_interval = "monthly";
+        } else {
+          return res.status(400).json({
+            message: "Rent/lease interval must be monthly or annually"
+          });
+        }
       }
 
 
@@ -193,8 +199,10 @@ router.put(
             updatedUser.bio || "",
 
           lease_interval:
-            updatedUser.lease_interval || "monthly"
+            updatedUser.lease_interval || "monthly",
 
+          rent_interval:
+            updatedUser.lease_interval || "monthly"
         }
 
       });

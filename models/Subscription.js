@@ -9,11 +9,12 @@ const PLAN_PRICES = {
   business: 34000,
 };
 
+// All subscription tier tenant limits removed: unlimited tenants for all users
 const TIER_LIMITS = {
-  free: { maxTenants: 5, feePercent: 5.0 },
-  pro: { maxTenants: 8, feePercent: 3.0 },
-  premium: { maxTenants: 15, feePercent: 1.0 },
-  business: { maxTenants: null, feePercent: 0.0 },
+  free: { maxTenants: null, feePercent: 1.5 },
+  pro: { maxTenants: null, feePercent: 1.5 },
+  premium: { maxTenants: null, feePercent: 1.5 },
+  business: { maxTenants: null, feePercent: 1.5 },
 };
 
 function createSubscriptionTable() {

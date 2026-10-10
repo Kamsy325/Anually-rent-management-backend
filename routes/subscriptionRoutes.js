@@ -19,7 +19,9 @@ router.get("/status", authenticateToken, async (req, res) => {
     res.json({
       ...sub,
       tenantCount,
-      canAddMoreTenants: sub.maxTenants === null || tenantCount < sub.maxTenants,
+      maxTenants: null,
+      canAddMoreTenants: true,
+      unlimitedTenants: true,
     });
   } catch (err) {
     console.error("FETCH SUBSCRIPTION ERROR:", err);

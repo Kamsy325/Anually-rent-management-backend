@@ -96,8 +96,10 @@ router.get(
           role: user.role || "landlord",
 
           lease_interval:
-            user.lease_interval || "monthly"
+            user.lease_interval || "monthly",
 
+          rent_interval:
+            user.lease_interval || "monthly"
         }
 
       });
