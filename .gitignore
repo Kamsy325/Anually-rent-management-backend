@@ -5,3 +5,4 @@ bun.lock
 bun.lockb
 *.sqlite
 *.sqlite-journal
+.vapid-keys.json

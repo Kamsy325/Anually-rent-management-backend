@@ -57,7 +57,17 @@ function createNotification({ userId, role, title, message, senderName = null, t
       [userId, role, title, message, senderName, type, paymentId],
       function (err) {
         if (err) return reject(err);
-        resolve({ id: this.lastID, userId, role, title, message, senderName, type, paymentId });
+        const record = { id: this.lastID, userId, role, title, message, senderName, type, paymentId };
+
+        // Asynchronously dispatch desktop notification (Web Push + live SSE)
+        try {
+          const { sendDesktopNotification } = require("../services/webPushService");
+          sendDesktopNotification(userId, role, record).catch((pushErr) => {
+            console.warn(`[Notification] Background desktop push failed for ${role} #${userId}:`, pushErr.message);
+          });
+        } catch (e) {}
+
+        resolve(record);
       }
     );
   });
